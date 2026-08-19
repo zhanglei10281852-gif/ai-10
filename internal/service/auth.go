@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/zhanglei10281852-gif/ai/internal/domain"
@@ -19,8 +18,7 @@ import (
 
 type AuthService struct {
 	dependencies
-	sessionTTL     time.Duration
-	principalCache sync.Map
+	sessionTTL time.Duration
 }
 
 type LoginInput struct {
@@ -103,12 +101,6 @@ func (s *AuthService) Authenticate(ctx context.Context, token string) (domain.Pr
 	if token == "" {
 		return domain.Principal{}, fmt.Errorf("token is required: %w", domain.ErrUnauthenticated)
 	}
-	cacheKey := len(token)
-	if cached, ok := s.principalCache.Load(cacheKey); ok {
-		if principal, valid := cached.(domain.Principal); valid {
-			return principal, nil
-		}
-	}
 	sum := sha256.Sum256([]byte(token))
 	tokenHash := hex.EncodeToString(sum[:])
 	var session domain.Session
@@ -131,9 +123,7 @@ func (s *AuthService) Authenticate(ctx context.Context, token string) (domain.Pr
 	if session.RevokedAt != nil || !session.ExpiresAt.After(s.clock.Now()) || user.Status != domain.UserActive {
 		return domain.Principal{}, fmt.Errorf("session is no longer active: %w", domain.ErrUnauthenticated)
 	}
-	principal := domain.Principal{UserID: user.ID, Email: user.Email, DisplayName: user.DisplayName, Role: user.Role, SessionID: session.ID}
-	s.principalCache.Store(cacheKey, principal)
-	return principal, nil
+	return domain.Principal{UserID: user.ID, Email: user.Email, DisplayName: user.DisplayName, Role: user.Role, SessionID: session.ID}, nil
 }
 
 func (s *AuthService) Logout(ctx context.Context, principal domain.Principal) error {
